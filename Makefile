@@ -1,5 +1,6 @@
 .SUFFIXES: .c .o
-CCFLAGS = -std=c99 -pedantic -Wall -Werror -pthread
+# _DEFAULT_SOURCE is for DT_DIR
+CCFLAGS = -std=c99 -D_DEFAULT_SOURCE -pedantic -Wall -Werror -pthread
 OPTIONS = -g
 
 build:
