@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+#define DEBUG 1
 #define BACKUPDIRNAME "backup"
 #define FILENAMEBUF 100
 
@@ -43,10 +44,12 @@ void iterateDir(char* curDirName) {
 
         if (stat(dir->d_name, &st) < 0) {
             // could not get information about file
+            if (DEBUG != 0) {
+                printf("could not read: %s\n", dir->d_name);
+            }
 
-            printf("could not read: %s\n", dir->d_name);
             if (errno != 0) {
-                perror(strerror(errno));
+                printf("%s\n", strerror(errno));
                 exit(1);
             }
             continue;
@@ -55,23 +58,27 @@ void iterateDir(char* curDirName) {
         if (S_ISREG(st.st_mode)) {
             // it is a regular file,
             // do a backup thing!
-            printf("File: %s\n", dir->d_name);
+            if (DEBUG != 0) {
+                printf("File: %s\n", dir->d_name);
+            }
         }
 
         if (S_ISDIR(st.st_mode)) {
             if (!strcmp(dir->d_name, ".") || !strcmp(dir->d_name, "..")) {
-                // maybe should also include ".git"
                 continue;
             }
 
             // it is a directory,
             // recursively call this function to read it
-            printf("Dir: %s\n", dir->d_name);
+            if (DEBUG != 0) {
+                printf("Dir: %s\n", dir->d_name);
+            }
+            //iterateDir(dir->d_name);
         }
     }
 
     if (errno != 0) {
-        perror(strerror(errno));
+        printf("%s\n", strerror(errno));
         exit(1);
     }
 
@@ -85,7 +92,7 @@ int main(int argc, char const *argv[]) {
 
     char curDir[PATH_MAX];
     if (getcwd(curDir, sizeof(curDir)) == NULL) {
-        perror(strerror(errno));
+        printf("%s\n", strerror(errno));
         exit(1);
     }
     iterateDir(curDir);
