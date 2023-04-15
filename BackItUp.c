@@ -9,8 +9,22 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
-#define BACKUPDIRNAME "backup"
+#define BACKUPDIRNAME ".backup/"
 #define FILENAMEBUF 100
+
+void fileRead(struct dirent* dir){
+
+    char * str = malloc((FILENAMEBUF + 4) * sizeof(char));
+    if(str == NULL){
+        printf("Memory creation issue with file name\n");
+        exit(1);
+    }
+    strncpy(str, dir->d_name, FILENAMEBUF);
+    char *b = ".bak";
+    strncat(str, b, 4);
+    printf("File: %s\n", str);
+    free(str);
+}
 
 DIR* getBackup() {
     // get the backup directory
@@ -37,7 +51,7 @@ void iterateDir(char* curDirName) {
     //DIR* backDir = getBackup();
     DIR* curDir = opendir(curDirName);
     struct dirent* dir = NULL;
-
+    DIR* backUpDir = getBackup();
     while ((dir = readdir(curDir)) != NULL) {
         struct stat st;
 
@@ -55,11 +69,11 @@ void iterateDir(char* curDirName) {
         if (S_ISREG(st.st_mode)) {
             // it is a regular file,
             // do a backup thing!
-            printf("File: %s\n", dir->d_name);
+            fileRead(dir);
         }
 
         if (S_ISDIR(st.st_mode)) {
-            if (!strcmp(dir->d_name, ".") || !strcmp(dir->d_name, "..")) {
+            if (!strcmp(dir->d_name, ".") || !strcmp(dir->d_name, "..") || !strcmp(dir->d_name, ".backup")) {
                 // maybe should also include ".git"
                 continue;
             }
@@ -70,11 +84,12 @@ void iterateDir(char* curDirName) {
         }
     }
 
-    if (errno != 0) {
+   /* if (errno != 0) {
         perror(strerror(errno));
         exit(1);
-    }
-
+    }*/
+    closedir(curDir);
+    closedir(backUpDir);
     // reached end of directory
 
 }
