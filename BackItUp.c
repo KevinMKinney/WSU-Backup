@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 
 #define BACKUPDIRNAME ".backup"
+#define BACKUPSUFFIX ".bak"
 #define DEBUG 0
 #define FILENAMEBUF 100 // Maybe use FILENAME_MAX
 #define BUFSIZE 256
@@ -69,8 +70,8 @@ void * backUpFile(void *param){
     strncat(str, BACKUPDIRNAME, 8);
     strncat(str, "/", 2);
     strncat(str, dir->d_name, FILENAMEBUF);
-    char *b = ".bak";
-    strncat(str, b, 4);
+    //char *b = ".bak";
+    strncat(str, BACKUPSUFFIX, 5);
     if(DEBUG == 1) printf("File created: %s\n", str);
 
     strncpy(sourceStr, myTD->curDir, PATH_MAX);
@@ -150,10 +151,13 @@ void iterateDir(char* curDirName) {
     }
 
     struct dirent* dir = NULL;
+    struct dirent* dir2 = NULL;
     DIR* backUpDir = getBackup(curDirName);
     int fileCount = 0;
+    int bu = 1;
     node *head = NULL, *tail = NULL;
     char* newDirName = calloc(PATH_MAX, sizeof(char));
+    char* backDirName = calloc(PATH_MAX, sizeof(char));
 
     while ((dir = readdir(curDir)) != NULL) {
         struct stat st;
@@ -186,8 +190,49 @@ void iterateDir(char* curDirName) {
             if (DEBUG != 0) {
                 printf("File: %s\n", dir->d_name);
             }
-            fileCount++;
-            insert(dir, curDirName, &head, &tail);
+
+            // checking to see if the file already has a backup
+
+            memset(newDirName, '\0', sizeof(char) * PATH_MAX);
+            newDirName = strncpy(newDirName, dir->d_name, PATH_MAX);
+            newDirName = strncat(newDirName, BACKUPSUFFIX, 5);
+            while ((dir2 = readdir(backUpDir)) != NULL) {
+                //printf("1: %s | 2: %s\n", newDirName, dir2->d_name);
+                if (!strcmp(newDirName, dir2->d_name)) {
+                    struct stat st2;
+
+                    memset(backDirName, '\0', sizeof(char) * PATH_MAX);
+                    strncpy(backDirName, curDirName, PATH_MAX);
+                    strncat(backDirName, "/", 2);
+                    strncat(backDirName, BACKUPDIRNAME, 8);
+                    strncat(backDirName, "/", PATH_MAX);
+                    strncat(backDirName, dir2->d_name, PATH_MAX);
+
+                    if (stat(backDirName, &st2) < 0) {
+                        // could not get information about file
+                        if (DEBUG != 0) {
+                            printf("could not read: %s\n", dir2->d_name);
+                        }
+                        if (errno != 0) {
+                            printf("%s\n", strerror(errno));
+                            exit(1);
+                        }
+                        break;
+                    }
+
+                    if (st.st_mtime <= st2.st_mtime) {
+                        // file's backup is up-to-date
+                        bu = 0;
+                    }
+                    break;
+                }
+            }
+
+            if (bu == 1) {
+                fileCount++;
+                insert(dir, curDirName, &head, &tail);
+            }
+            bu = 1;
         }
 
 
@@ -237,6 +282,7 @@ void iterateDir(char* curDirName) {
     // reached end of directory
 
     free(newDirName);
+    free(backDirName);
 }
 
 int main(int argc, char const *argv[]) {
