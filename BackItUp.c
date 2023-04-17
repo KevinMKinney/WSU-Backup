@@ -27,6 +27,10 @@ typedef struct thread_data{
     int index;
 } td;
 
+int threadCount;
+int backupExistsFlag = 1;
+int restoreFlag = 0;
+
 void insert(struct dirent *d, char* curDirName, node **head, node **tail){
     node *n = (node *) malloc(sizeof(node));
     if(n == NULL) exit(1);
@@ -78,20 +82,38 @@ void * backUpFile(void *param){
     strncat(sourceStr, "/", 2);
     strncat(sourceStr, dir->d_name, PATH_MAX);
     
-    //Open up the files, with error check
-    //fp = fopen(dir->d_name, "r"); //read the source file
-    fp = fopen(sourceStr, "r");
-    fp2 = fopen(str, "w"); //write to dest file
-    if (fp == NULL || fp2 == NULL) {
-		fprintf(stderr, "Cannot open file %s or %s to read\n", sourceStr, str);
-		free(str);
-        free(readStr);
-		exit(1);
-	}
     
-    //The actually coping is done here
-    while(fgets(readStr, BUFSIZE, fp)){ 
-        fputs(readStr, fp2);
+    if(!restoreFlag){
+        //Open up the files, with error check
+        //fp = fopen(dir->d_name, "r"); //read the source file
+        fp = fopen(sourceStr, "r");
+        fp2 = fopen(str, "w"); //write to dest file
+        if (fp == NULL || fp2 == NULL) {
+		    fprintf(stderr, "Cannot open file %s or %s to read\n", sourceStr, str);
+		    free(str);
+            free(readStr);
+		    exit(1);
+	    }
+
+        //The actually coping is done here
+        while(fgets(readStr, BUFSIZE, fp)){ 
+            fputs(readStr, fp2);
+        }
+    }else{
+        //Open up the files, with error check
+        //fp = fopen(dir->d_name, "r"); //read the source file
+        fp = fopen(sourceStr, "w");
+        fp2 = fopen(str, "r"); //write to dest file
+        if (fp == NULL || fp2 == NULL) {
+		    fprintf(stderr, "Cannot open file %s or %s to read\n", sourceStr, str);
+		    free(str);
+            free(readStr);
+		    exit(1);
+	    }
+
+        while(fgets(readStr, BUFSIZE, fp2)){ 
+            fputs(readStr, fp);
+        }
     } 
     
     //Close the files 
@@ -101,9 +123,11 @@ void * backUpFile(void *param){
     }
     
     //TODO Calculate the number of bytes copied from file to file    
-    printf("[thread %x] %s\n", index, dir->d_name);
+    printf("[thread %d] %s\n", index, dir->d_name);
     free(str);
+    free(myTD->curDir);
     free(myTD);
+    free(sourceStr);
     free(readStr);
     return NULL;
 }
@@ -117,14 +141,15 @@ DIR* getBackup(char* curDirName) {
 
     // get the backup directory
     DIR* backDir = opendir(backDirName);
-    //TODO Have a way for when the backup already exists
+    
     if (backDir == NULL) {
+        backupExistsFlag = 0;
         if (errno != ENOENT) {
             printf("%s\n", strerror(errno));
             exit(1);
         }
 
-        // could not find directory, so make a new one
+        // could  not find directory, so make a new one
         mkdir(backDirName, S_IRWXU);
 
         backDir = opendir(backDirName);
@@ -162,7 +187,7 @@ void iterateDir(char* curDirName) {
     while ((dir = readdir(curDir)) != NULL) {
         struct stat st;
         
-        if (!strcmp(dir->d_name, ".") || !strcmp(dir->d_name, "..") || !strcmp(dir->d_name, BACKUPDIRNAME)) {
+        if (!strcmp(dir->d_name, ".") || !strcmp(dir->d_name, "..") || !strcmp(dir->d_name, ".git") || !strcmp(dir->d_name, BACKUPDIRNAME)) {
             continue;
         }
 
@@ -192,47 +217,56 @@ void iterateDir(char* curDirName) {
             }
 
             // checking to see if the file already has a backup
-
-            memset(newDirName, '\0', sizeof(char) * PATH_MAX);
-            newDirName = strncpy(newDirName, dir->d_name, PATH_MAX);
-            newDirName = strncat(newDirName, BACKUPSUFFIX, 5);
-            while ((dir2 = readdir(backUpDir)) != NULL) {
-                //printf("1: %s | 2: %s\n", newDirName, dir2->d_name);
-                if (!strcmp(newDirName, dir2->d_name)) {
-                    struct stat st2;
-
-                    memset(backDirName, '\0', sizeof(char) * PATH_MAX);
-                    strncpy(backDirName, curDirName, PATH_MAX);
-                    strncat(backDirName, "/", 2);
-                    strncat(backDirName, BACKUPDIRNAME, 8);
-                    strncat(backDirName, "/", PATH_MAX);
-                    strncat(backDirName, dir2->d_name, PATH_MAX);
-
-                    if (stat(backDirName, &st2) < 0) {
-                        // could not get information about file
-                        if (DEBUG != 0) {
-                            printf("could not read: %s\n", dir2->d_name);
+            if(backupExistsFlag == 1){
+                memset(newDirName, '\0', sizeof(char) * PATH_MAX);
+                newDirName = strncpy(newDirName, dir->d_name, PATH_MAX);
+                newDirName = strncat(newDirName, BACKUPSUFFIX, 5);
+                while ((dir2 = readdir(backUpDir)) != NULL) {
+                    //printf("1: %s | 2: %s\n", newDirName, dir2->d_name);
+                    if (!strcmp(newDirName, dir2->d_name)) {
+                        struct stat st2;
+ 
+                        memset(backDirName, '\0', sizeof(char) * PATH_MAX);
+                        strncpy(backDirName, curDirName, PATH_MAX);
+                        strncat(backDirName, "/", 2);
+                        strncat(backDirName, BACKUPDIRNAME, 8);
+                        strncat(backDirName, "/", PATH_MAX);
+                        strncat(backDirName, dir2->d_name, PATH_MAX);
+ 
+                        if (stat(backDirName, &st2) < 0) {
+                            // could not get information about file
+                            if (DEBUG != 0) {
+                                printf("could not read: %s\n", dir2->d_name);
+                            }
+                            if (errno != 0) {
+                                printf("%s\n", strerror(errno));
+                                exit(1);
+                            }
+                            break;
                         }
-                        if (errno != 0) {
-                            printf("%s\n", strerror(errno));
-                            exit(1);
+                        if (st.st_mtime <= st2.st_mtime) {
+                            // file's backup is up-to-date
+                            bu = 0;
                         }
                         break;
                     }
-
-                    if (st.st_mtime <= st2.st_mtime) {
-                        // file's backup is up-to-date
-                        bu = 0;
-                    }
-                    break;
                 }
+ 
+                if (bu == 1) {
+                    fileCount++;
+                    insert(dir, curDirName, &head, &tail);
+                }
+                else{
+                    printf("%s doesn't need backing up\n", dir->d_name);
+                }
+                bu = 1;
+                //used to rewind backup directory to look though it again
+                rewinddir(backUpDir);
             }
-
-            if (bu == 1) {
+            else{
                 fileCount++;
                 insert(dir, curDirName, &head, &tail);
             }
-            bu = 1;
         }
 
 
@@ -242,8 +276,7 @@ void iterateDir(char* curDirName) {
             if (DEBUG != 0) {
                 printf("Dir: %s\n", dir->d_name);
             }
-
-            iterateDir(newDirName);
+            iterateDir(dir->d_name);
         }
     }
     //This is where the backing of files is done
@@ -258,14 +291,14 @@ void iterateDir(char* curDirName) {
     for(i = 0; i < fileCount; i++){
         //We know the thread number and the regular file
         td *myTd = malloc(sizeof(td));
-        myTd->index = i;
+        myTd->index = threadCount;
         myTd->d = n->data;
         myTd->curDir = calloc(PATH_MAX, sizeof(char));
         myTd->curDir = strncpy(myTd->curDir, n->curDir, PATH_MAX);
-
-        printf("[thread %x] Backing up %s\n", i, n->data->d_name);
+        printf("[thread %d] Backing up %s\n", threadCount, n->data->d_name);
         pthread_create(&thr[i], NULL, backUpFile, (void *)myTd);//(void *)n->data);
         
+        threadCount++;
         temp = n->next;
         free(n->curDir);
         free(n);
@@ -288,7 +321,10 @@ void iterateDir(char* curDirName) {
 int main(int argc, char const *argv[]) {
     
     //TODO: make the "-r" option flag (for restoring files)
-
+    if(argc == 2 && !strcmp(argv[1], "-r")){
+        printf("%s\n", argv[1]);
+    }
+    threadCount = 1;
     char curDir[PATH_MAX];
     if (getcwd(curDir, sizeof(curDir)) == NULL) {
         printf("%s\n", strerror(errno));
