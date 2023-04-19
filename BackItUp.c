@@ -55,6 +55,7 @@ void insert(char *d, char* curDirName, node **head, node **tail){
 void * backUpFile(void *param){
     //set variables up
     FILE *fp = NULL, *fp2 = NULL;
+    errno = 0;
     td *myTD = (td *) param;
     int index = myTD->index;
     char* dir = myTD->fileName;
@@ -90,9 +91,8 @@ void * backUpFile(void *param){
         fp = fopen(sourceStr, "r");
         fp2 = fopen(str, "w"); //write to dest file
         if ( fp == NULL || fp2 == NULL) {
-		    fprintf(stderr, "Cannot open file %s or %s to read\n", sourceStr, str);
+		    fprintf(stderr, "Cannot open file %s or %s to read/write\n", sourceStr, str);
 		    free(str);
-            //free(readStr);
 		    exit(1);
 	    }
 
@@ -113,21 +113,20 @@ void * backUpFile(void *param){
     }else{
         //Open up the files, with error check
         //fp = fopen(dir->d_name, "r"); //read the source file
-        fp = fopen(sourceStr, "r");
+        fp = fopen(sourceStr, "w");
         fp2 = fopen(str, "r"); //write to dest file
-        if (fp == NULL || fp2 == NULL) {
-		    fprintf(stderr, "Cannot open file %s or %s to read\n", sourceStr, str);
+        if ( fp == NULL || fp2 == NULL) {
+		    fprintf(stderr, "Cannot open file %s or %s to read/write\n", sourceStr, str);
 		    free(str);
-            //free(readStr);
 		    exit(1);
 	    }
 
-       /* while(!feof(fp2)){  
+        while(!feof(fp2)){  
             readC = fgetc(fp2);
             if(feof(fp2)) break;
             fputc(readC, fp);
             bytesRead+= 1; 
-        }*/
+        }
         memset(str, '\0', sizeof(char) * PATH_MAX);
         strncpy(str, dir, PATH_MAX);
         strncat(str, BACKUPSUFFIX, 5);
@@ -202,10 +201,8 @@ void restoreDir(char* curDirName){
     }
 
     struct dirent* dir = NULL;
-    //struct dirent* dir2 = NULL;
     DIR* backUpDir = getBackup(curDirName);
     int fileCount = 0;
-    //int bu = 1;
     node *head = NULL, *tail = NULL;
     char* newDirName = calloc(PATH_MAX, sizeof(char));
     char* backDirName = calloc(PATH_MAX, sizeof(char));
@@ -266,7 +263,7 @@ void restoreDir(char* curDirName){
                 //File exist in backup, but not in cwd, so add it
             }
             
-            else if (st.st_mtime < st2.st_mtime) {
+            else if (st.st_mtime <= st2.st_mtime || !strcmp(dir->d_name, "BackItUp.bak")){
                 printf("[thread ] %s is already the most current version\n", dName);
             }
             else{
@@ -293,7 +290,6 @@ void restoreDir(char* curDirName){
         td *myTd = malloc(sizeof(td));
         myTd->index = threadCount;
         myTd->fileName = n->data;
-        printf("%s\n", n->data);
         myTd->curDir = calloc(PATH_MAX, sizeof(char));
         myTd->curDir = strncpy(myTd->curDir, n->curDir, PATH_MAX);
         if (restoreFlag) {
@@ -383,7 +379,6 @@ void iterateDir(char* curDirName) {
             // it is a regular file,
             // add onto the list for it to be backed up
             if (DEBUG != 0) { printf("File: %s\n", dir->d_name); }
-            printf("%s and %ld\n", dir->d_name, st.st_size);
             // checking to see if the file already has a backup
             if(backupExistsFlag == 1){
                 // set newDirName to be the backup file name (reusing the variable)
