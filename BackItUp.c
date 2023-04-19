@@ -15,22 +15,33 @@
 #define FILENAMEBUF 100 // Maybe use FILENAME_MAX
 #define BUFSIZE 512
 
+// List data structure that contains the files that need to be backed up or restored.
 typedef struct ListNode{
     char* data;
     char* curDir;
     struct ListNode *next;
 }node;
 
+// The data that is passed to each thread (used in conjunction with the list).
 typedef struct thread_data{
     char* curDir;
     char* fileName;
     int index;
 } td;
 
+// global variables for threads
 int threadCount;
 int backupExistsFlag = 1;
 int restoreFlag = 0;
 
+/**
+ * insert = Appends a new node to the list. The node's data is provided as input.
+ * 
+ *      d - The name of the file
+ *      curDirName - The absolute path of the directory the file is located in
+ *      head - The node at the front of the list
+ *      tail - The node at the end of the list
+ **/
 void insert(char *d, char* curDirName, node **head, node **tail){
     node *n = (node *) malloc(sizeof(node));
     if(n == NULL) exit(1);
@@ -50,8 +61,13 @@ void insert(char *d, char* curDirName, node **head, node **tail){
     
 }
 
-//This is how the backing of files is done, where it takes the source file,
-//and then make a backup file of it, then put it's contents in it
+/**
+ * backUpFile = This is how the backing of files is done. Where, after creating a 
+ * thread to run this function, it takes the source file, and then make a backup 
+ * file of it, then put it's contents in it.
+ * 
+ *      param - The thread data
+ **/
 void * backUpFile(void *param){
     //set variables up
     FILE *fp = NULL, *fp2 = NULL;
@@ -62,7 +78,6 @@ void * backUpFile(void *param){
     int bytesRead = 0;
     char * str = malloc(PATH_MAX * sizeof(char));
     char * sourceStr = malloc(PATH_MAX * sizeof(char));
-    //char * readStr = malloc(BUFSIZE * sizeof(char));
     char readC;
     //malloc check
     if(str == NULL){// || readStr == NULL){
@@ -149,6 +164,13 @@ void * backUpFile(void *param){
     return NULL;
 }
 
+/**
+ * getBackup = The function tries to find the .backup directory (or whatever
+ * the backup directory is named based on the macro) and returns its corresponding 
+ * DIR pointer. If its not found during this process, a new .backup is made.
+ * 
+ *      curDirName - The absolute path of the directory the file is located in
+ **/
 DIR* getBackup(char* curDirName) {
 
     char* backDirName = calloc(PATH_MAX, sizeof(char));
@@ -159,6 +181,7 @@ DIR* getBackup(char* curDirName) {
         exit(1);
     }
 
+    // set backDirName to be the absolute path to the backup directory
     backDirName = strncpy(backDirName, curDirName, PATH_MAX);
     backDirName = strncat(backDirName, "/", PATH_MAX);
     backDirName = strncat(backDirName, BACKUPDIRNAME, PATH_MAX);
@@ -188,6 +211,13 @@ DIR* getBackup(char* curDirName) {
     return backDir;
 }
 
+/**
+ * restoreDir = This is how the restoration of files is done. Where, after creating a 
+ * thread to run this function, it takes the backup file, and then copies its contents
+ * to the source file.
+ * 
+ *      param - The thread data
+ **/
 void restoreDir(char* curDirName){
 
     if (DEBUG != 0) { printf("cur: %s\n", curDirName); }
@@ -219,7 +249,7 @@ void restoreDir(char* curDirName){
             continue;
         }
 
-
+        // set backDirName to be the absolute path to the backup file
         memset(backDirName, '\0', sizeof(char) * PATH_MAX);
         strncpy(backDirName, curDirName, PATH_MAX);
         strncat(backDirName, "/", 2);
@@ -246,7 +276,6 @@ void restoreDir(char* curDirName){
             newDirName = strncpy(newDirName, curDirName, PATH_MAX);
             newDirName = strncat(newDirName, "/", PATH_MAX);
             newDirName = strncat(newDirName, dName, PATH_MAX);
-            //printf("File %s: %s\n",dir->d_name, newDirName);
 
             printf("[thread ] Restoring %s\n", dName);
             
@@ -321,6 +350,15 @@ void restoreDir(char* curDirName){
     
 }
 
+/**
+ * iterateDir = From the cwd, recursivly iterate (Depth first) through all 
+ * regular files and directories. If it is a regular file, append to a list
+ * which is then passed to threads for backing it up or restoring it after
+ * iterating through the current directory. If it is a directory, recusively
+ * call this function on it.
+ * 
+ *      curDirName - The absolute path of the directory the file is located in
+ **/
 void iterateDir(char* curDirName) {
     if (DEBUG != 0) { printf("cur: %s\n", curDirName); }
 
@@ -385,6 +423,7 @@ void iterateDir(char* curDirName) {
                 memset(newDirName, '\0', sizeof(char) * PATH_MAX);
                 newDirName = strncpy(newDirName, dir->d_name, PATH_MAX);
                 newDirName = strncat(newDirName, BACKUPSUFFIX, 5);
+
                 while ((dir2 = readdir(backUpDir)) != NULL) {
                     if (!strcmp(newDirName, dir2->d_name)) {
                         struct stat st2;
@@ -506,6 +545,7 @@ int main(int argc, char const *argv[]) {
         exit(1);
     }
 
+    // check if executable was ran with a -r flag
     if(argc == 2 && !strcmp(argv[1], "-r")){
         restoreFlag = 1;
         restoreDir(curDir);
