@@ -135,6 +135,13 @@ void * backUpFile(void *param){
 DIR* getBackup(char* curDirName) {
 
     char* backDirName = calloc(PATH_MAX, sizeof(char));
+
+    //calloc check
+    if(backDirName == NULL) {
+        printf("Memory creation issue with backup directory name\n");
+        exit(1);
+    }
+
     backDirName = strncpy(backDirName, curDirName, PATH_MAX);
     backDirName = strncat(backDirName, "/", PATH_MAX);
     backDirName = strncat(backDirName, BACKUPDIRNAME, PATH_MAX);
@@ -184,13 +191,24 @@ void iterateDir(char* curDirName) {
     char* newDirName = calloc(PATH_MAX, sizeof(char));
     char* backDirName = calloc(PATH_MAX, sizeof(char));
 
+    //calloc check
+    if(newDirName == NULL || backDirName == NULL) {
+        printf("Memory creation issue with backup directory name\n");
+        exit(1);
+    }
+
     while ((dir = readdir(curDir)) != NULL) {
         struct stat st;
         
-        if (!strcmp(dir->d_name, ".") || !strcmp(dir->d_name, "..") || !strcmp(dir->d_name, ".git") || !strcmp(dir->d_name, BACKUPDIRNAME)) {
+        // Ignore these directories
+        if (!strcmp(dir->d_name, ".") || 
+            !strcmp(dir->d_name, "..") || 
+            !strcmp(dir->d_name, ".git") || 
+            !strcmp(dir->d_name, BACKUPDIRNAME)) {
             continue;
         }
 
+        // set newDirName to be the absolute file path name
         memset(newDirName, '\0', sizeof(char) * PATH_MAX);
         newDirName = strncpy(newDirName, curDirName, PATH_MAX);
         newDirName = strncat(newDirName, "/", PATH_MAX);
@@ -199,9 +217,7 @@ void iterateDir(char* curDirName) {
         //printf("DDNAME: %s\n", dir->d_name);
         if (stat(newDirName, &st) < 0) {
             // could not get information about file
-            if (DEBUG != 0) {
-                printf("could not read: %s\n", dir->d_name);
-            }
+            if (DEBUG != 0) { printf("could not read: %s\n", dir->d_name); }
             if (errno != 0) {
                 printf("%s\n", strerror(errno));
                 exit(1);
@@ -212,20 +228,19 @@ void iterateDir(char* curDirName) {
         if (S_ISREG(st.st_mode)) {
             // it is a regular file,
             // add onto the list for it to be backed up
-            if (DEBUG != 0) {
-                printf("File: %s\n", dir->d_name);
-            }
+            if (DEBUG != 0) { printf("File: %s\n", dir->d_name); }
 
             // checking to see if the file already has a backup
             if(backupExistsFlag == 1){
+                // set newDirName to be the backup file name (reusing the variable)
                 memset(newDirName, '\0', sizeof(char) * PATH_MAX);
                 newDirName = strncpy(newDirName, dir->d_name, PATH_MAX);
                 newDirName = strncat(newDirName, BACKUPSUFFIX, 5);
                 while ((dir2 = readdir(backUpDir)) != NULL) {
-                    //printf("1: %s | 2: %s\n", newDirName, dir2->d_name);
                     if (!strcmp(newDirName, dir2->d_name)) {
                         struct stat st2;
  
+                        // set backDirName to be the absolute path to the .backup in the cwd
                         memset(backDirName, '\0', sizeof(char) * PATH_MAX);
                         strncpy(backDirName, curDirName, PATH_MAX);
                         strncat(backDirName, "/", 2);
@@ -235,29 +250,39 @@ void iterateDir(char* curDirName) {
  
                         if (stat(backDirName, &st2) < 0) {
                             // could not get information about file
-                            if (DEBUG != 0) {
-                                printf("could not read: %s\n", dir2->d_name);
-                            }
+                            if (DEBUG != 0) { printf("could not read: %s\n", dir2->d_name); }
                             if (errno != 0) {
                                 printf("%s\n", strerror(errno));
                                 exit(1);
                             }
                             break;
                         }
-                        if (st.st_mtime <= st2.st_mtime) {
-                            // file's backup is up-to-date
-                            bu = 0;
+                        if (restoreFlag) {
+                            if (st.st_mtime > st2.st_mtime) {
+                                // file is ahead of back, so don't restore
+                                bu = 0;
+                            }
+                        } else {
+                            if (st.st_mtime <= st2.st_mtime) {
+                                // file's backup is up-to-date, so don't backup
+                                bu = 0;
+                            }
                         }
                         break;
                     }
                 }
  
                 if (bu == 1) {
+                    // found a file needing to be changed, put it in the list
                     fileCount++;
                     insert(dir, curDirName, &head, &tail);
                 }
                 else{
-                    printf("%s doesn't need backing up\n", dir->d_name);
+                    if (restoreFlag) {
+                        printf("%s doesn't need restoring\n", dir->d_name);
+                    } else {
+                        printf("%s doesn't need backing up\n", dir->d_name);
+                    }
                 }
                 bu = 1;
                 //used to rewind backup directory to look though it again
@@ -295,7 +320,11 @@ void iterateDir(char* curDirName) {
         myTd->d = n->data;
         myTd->curDir = calloc(PATH_MAX, sizeof(char));
         myTd->curDir = strncpy(myTd->curDir, n->curDir, PATH_MAX);
-        printf("[thread %d] Backing up %s\n", threadCount, n->data->d_name);
+        if (restoreFlag) {
+            printf("[thread %d] Restoring %s\n", threadCount, n->data->d_name);
+        } else {
+            printf("[thread %d] Backing up %s\n", threadCount, n->data->d_name);
+        }
         pthread_create(&thr[i], NULL, backUpFile, (void *)myTd);//(void *)n->data);
         
         threadCount++;
@@ -304,25 +333,25 @@ void iterateDir(char* curDirName) {
         free(n);
         n = temp;
     }
+
     //This is where the waiting for files to be executed is done
     for(i = 0; i < fileCount; i++){
         pthread_join(thr[i], NULL);
     }
     
+    // reached end of directory
     //close the directories once we are done with them
     closedir(curDir);
     closedir(backUpDir);
-    // reached end of directory
-
+    
     free(newDirName);
     free(backDirName);
 }
 
 int main(int argc, char const *argv[]) {
     
-    //TODO: make the "-r" option flag (for restoring files)
     if(argc == 2 && !strcmp(argv[1], "-r")){
-        printf("%s\n", argv[1]);
+        restoreFlag = 1;
     }
     threadCount = 1;
     char curDir[PATH_MAX];
